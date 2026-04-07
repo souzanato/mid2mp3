@@ -713,23 +713,27 @@ async function convertItem(item) {
     // Set up sequencer
     const seq = new SpessaSynthSequencer(synth);
     seq.loadNewSongList([midi]);
+    seq.play();
 
-    // Render in chunks
-    const CHUNK = SAMPLE_RATE * 2; // 2s chunks
+    // Render in small chunks — 128 samples é o recomendado pela API
+    const BUFFER_SIZE = 128;
     const leftChannel  = new Float32Array(totalSamples);
     const rightChannel = new Float32Array(totalSamples);
 
-    let offset = 0;
-    while (offset < totalSamples) {
-      const size = Math.min(CHUNK, totalSamples - offset);
-      const out  = synth.renderAudio(size);
-      leftChannel.set(out[0].subarray(0, size), offset);
-      rightChannel.set(out[1].subarray(0, size), offset);
-      offset += size;
-      item.progress = 20 + Math.round((offset / totalSamples) * 60);
-      renderQueue();
-      // yield to browser
-      await new Promise(r => setTimeout(r, 0));
+    let filledSamples = 0;
+    let yieldCounter  = 0;
+    while (filledSamples < totalSamples) {
+      const size = Math.min(BUFFER_SIZE, totalSamples - filledSamples);
+      seq.processTick();
+      synth.process(leftChannel, rightChannel, filledSamples, size);
+      filledSamples += size;
+      yieldCounter++;
+      // Yield a cada ~0.5s de áudio para não travar o browser
+      if (yieldCounter % 200 === 0) {
+        item.progress = 20 + Math.round((filledSamples / totalSamples) * 60);
+        renderQueue();
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
 
     item.progress = 82; renderQueue();
