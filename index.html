@@ -719,13 +719,16 @@ async function convertItem(item) {
     const BUFFER_SIZE = 128;
     const leftChannel  = new Float32Array(totalSamples);
     const rightChannel = new Float32Array(totalSamples);
+    const outputs = [leftChannel, rightChannel];
+    const reverb  = [new Float32Array(totalSamples), new Float32Array(totalSamples)];
+    const chorus  = [new Float32Array(totalSamples), new Float32Array(totalSamples)];
 
     let filledSamples = 0;
     let yieldCounter  = 0;
     while (filledSamples < totalSamples) {
       const size = Math.min(BUFFER_SIZE, totalSamples - filledSamples);
       seq.processTick();
-      synth.process(leftChannel, rightChannel, filledSamples, size);
+      synth.renderAudio(outputs, reverb, chorus, filledSamples, size);
       filledSamples += size;
       yieldCounter++;
       // Yield a cada ~0.5s de áudio para não travar o browser
