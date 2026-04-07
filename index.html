@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MIDI → MP3</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #080B10;
+    --surface:   #0E1219;
+    --card:      #141820;
+    --border:    #1E2430;
+    --accent:    #3B82F6;
+    --accent2:   #6366F1;
+    --success:   #10B981;
+    --error:     #EF4444;
+    --warning:   #F59E0B;
+    --text:      #E2E8F0;
+    --muted:     #64748B;
+    --dim:       #2A3040;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  /* ── Grid lines background ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--border) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .app {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 60px;
+  }
+
+  /* ── Header ── */
+  header {
+    text-align: center;
+    margin-bottom: 40px;
+  }
+
+  .logo {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+
+  .logo-icon {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 0 24px rgba(59,130,246,0.35);
+  }
+
+  .logo-text {
+    font-family: 'Space Mono', monospace;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .tagline {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Main panel ── */
+  .panel {
+    width: 100%;
+    max-width: 640px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  }
+
+  /* ── SF2 notice bar ── */
+  .sf2-bar {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .sf2-bar .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 6px var(--success);
+    flex-shrink: 0;
+  }
+
+  .sf2-bar .dot.loading { background: var(--warning); box-shadow: 0 0 6px var(--warning); animation: pulse 1s infinite; }
+  .sf2-bar .dot.error   { background: var(--error);   box-shadow: 0 0 6px var(--error); }
+
+  .sf2-bar strong { color: var(--text); }
+
+  .sf2-load-btn {
+    margin-left: auto;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .sf2-load-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #sf2-input { display: none; }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    margin: 24px;
+    border: 2px dashed var(--dim);
+    border-radius: 14px;
+    padding: 48px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.25s;
+    position: relative;
+  }
+
+  .drop-zone:hover,
+  .drop-zone.drag-over {
+    border-color: var(--accent);
+    background: rgba(59,130,246,0.05);
+  }
+
+  .drop-zone.drag-over { transform: scale(1.01); }
+
+  .drop-icon {
+    font-size: 40px;
+    margin-bottom: 12px;
+    display: block;
+    filter: grayscale(0.5);
+  }
+
+  .drop-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  .drop-sub {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .drop-sub kbd {
+    background: var(--dim);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  #file-input { display: none; }
+
+  /* ── Options bar ── */
+  .options {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 24px 16px;
+    flex-wrap: wrap;
+  }
+
+  .opt-label {
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 2px;
+  }
+
+  .bitrate-select {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 12px;
+    padding: 5px 10px;
+    cursor: pointer;
+    outline: none;
+    font-family: 'Space Mono', monospace;
+  }
+
+  .bitrate-select:focus { border-color: var(--accent); }
+
+  /* ── Queue ── */
+  .queue {
+    margin: 0 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .queue-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+
+  .queue-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted);
+    font-family: 'Space Mono', monospace;
+  }
+
+  .clear-btn {
+    font-size: 11px;
+    color: var(--muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: color 0.2s;
+  }
+  .clear-btn:hover { color: var(--error); }
+
+  .queue-item {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    transition: border-color 0.2s;
+  }
+
+  .queue-item.state-converting { border-color: var(--accent); }
+  .queue-item.state-done       { border-color: var(--success); }
+  .queue-item.state-error      { border-color: var(--error); }
+
+  .qi-icon {
+    font-size: 16px;
+    width: 28px;
+    text-align: center;
+  }
+
+  .qi-info { min-width: 0; }
+
+  .qi-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+  }
+
+  .qi-status {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .qi-status.ok      { color: var(--success); }
+  .qi-status.err     { color: var(--error); }
+  .qi-status.running { color: var(--accent); }
+
+  .qi-progress {
+    height: 2px;
+    background: var(--dim);
+    border-radius: 2px;
+    margin-top: 5px;
+    overflow: hidden;
+  }
+
+  .qi-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 2px;
+    transition: width 0.3s;
+    width: 0%;
+  }
+
+  .qi-progress-bar.done    { background: var(--success); width: 100%; }
+  .qi-progress-bar.error   { background: var(--error); }
+
+  .qi-actions { display: flex; gap: 6px; }
+
+  .qi-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 14px;
+    padding: 4px;
+    border-radius: 4px;
+    transition: color 0.2s;
+    line-height: 1;
+  }
+  .qi-btn:hover { color: var(--text); }
+  .qi-btn.download { color: var(--accent); }
+  .qi-btn.download:hover { color: #60a5fa; }
+  .qi-btn.remove:hover { color: var(--error); }
+
+  /* ── Convert button ── */
+  .actions {
+    padding: 16px 24px 24px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-add {
+    flex: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    padding: 11px 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .btn-add:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-convert {
+    flex: 1;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none;
+    border-radius: 10px;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    padding: 12px 24px;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+    letter-spacing: 0.3px;
+    box-shadow: 0 4px 20px rgba(59,130,246,0.3);
+  }
+  .btn-convert:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); }
+  .btn-convert:active:not(:disabled) { transform: translateY(0); }
+  .btn-convert:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 28px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.8;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 20px;
+    font-size: 13px;
+    color: var(--text);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+    z-index: 1000;
+    white-space: nowrap;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* ── Empty state ── */
+  .empty-state {
+    text-align: center;
+    padding: 20px;
+    color: var(--dim);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">♫</div>
+      <div class="logo-text">MIDI <span>→</span> MP3</div>
+    </div>
+    <p class="tagline">Conversão de alta qualidade · 100% no navegador · sem upload</p>
+  </header>
+
+  <div class="panel">
+
+    <!-- SF2 status bar -->
+    <div class="sf2-bar">
+      <div class="dot loading" id="sf2-dot"></div>
+      <span id="sf2-status">Carregando soundfont <strong>FluidR3 GM</strong>…</span>
+      <input type="file" id="sf2-input" accept=".sf2,.sf3">
+      <button class="sf2-load-btn" onclick="document.getElementById('sf2-input').click()">Trocar .sf2</button>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="drop-zone">
+      <span class="drop-icon">🎵</span>
+      <div class="drop-title">Arraste arquivos MIDI aqui</div>
+      <div class="drop-sub">ou clique para selecionar &nbsp;<kbd>.mid</kbd>&nbsp;<kbd>.midi</kbd></div>
+    </div>
+    <input type="file" id="file-input" accept=".mid,.midi" multiple>
+
+    <!-- Options -->
+    <div class="options">
+      <span class="opt-label">Qualidade</span>
+      <select class="bitrate-select" id="bitrate">
+        <option value="128">128 kbps</option>
+        <option value="192" selected>192 kbps</option>
+        <option value="256">256 kbps</option>
+        <option value="320">320 kbps</option>
+      </select>
+    </div>
+
+    <!-- Queue -->
+    <div class="queue" id="queue">
+      <div class="queue-header" id="queue-header" style="display:none">
+        <span class="queue-title" id="queue-count">0 arquivos</span>
+        <button class="clear-btn" onclick="clearDone()">limpar concluídos</button>
+      </div>
+      <div class="empty-state" id="empty-state">Nenhum arquivo na fila</div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions">
+      <button class="btn-add" onclick="document.getElementById('file-input').click()">+ Adicionar</button>
+      <button class="btn-convert" id="btn-convert" onclick="startConversion()">▶&nbsp; Converter tudo</button>
+    </div>
+
+  </div>
+
+  <footer>
+    Funciona offline após o primeiro carregamento &nbsp;·&nbsp;
+    Soundfont: <a href="https://github.com/musescore/MuseScore/tree/master/share/sound" target="_blank">FluidR3 GM</a> &nbsp;·&nbsp;
+    Sintetizador: <a href="https://github.com/spessasus/SpessaSynth" target="_blank">SpessaSynth</a>
+  </footer>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ─── Libraries ─────────────────────────────────── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<script type="module">
+// ── SpessaSynth core via ESM ──────────────────────────────────
+import {
+  BasicMIDI,
+  SoundBankLoader,
+  SpessaSynthProcessor,
+  SpessaSynthSequencer,
+  audioToWav
+} from 'https://cdn.jsdelivr.net/npm/spessasynth_core@4.1.5/+esm';
+
+// ── State ─────────────────────────────────────────────────────
+const SAMPLE_RATE = 44100;
+let soundBank   = null;
+let queue       = [];        // { file, name, state, progress, blob, objectUrl }
+let converting  = false;
+
+// ── SF2 loading ───────────────────────────────────────────────
+function setSF2Status(state, msg) {
+  const dot = document.getElementById('sf2-dot');
+  const txt = document.getElementById('sf2-status');
+  dot.className = 'dot ' + (state === 'loading' ? 'loading' : state === 'error' ? 'error' : '');
+  txt.innerHTML = msg;
+}
+
+async function tryFetchSF2(url, label) {
+  setSF2Status('loading', `Baixando ${label}…`);
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const buf = await resp.arrayBuffer();
+  setSF2Status('loading', 'Processando soundfont…');
+  soundBank = SoundBankLoader.fromArrayBuffer(buf);
+  setSF2Status('ok', `${label} carregado ✓`);
+}
+
+async function initSF2() {
+  // CDNs com CORS aberto, testados e confiáveis
+  const cdns = [
+    // jsDelivr espelha qualquer repo do GitHub com CORS — muito confiável
+    ['https://cdn.jsdelivr.net/gh/urish/cinto@master/media/FluidR3%20GM.sf2', 'FluidR3 GM'],
+    // Fallback: GeneralUser GS — menor (30MB), ótima qualidade
+    ['https://cdn.jsdelivr.net/gh/mrbumpy409/GeneralUser-GS@3.2.1/soundfonts/GeneralUser%20GS%20v2.0.1.sf2', 'GeneralUser GS'],
+  ];
+
+  for (const [url, label] of cdns) {
+    try {
+      await tryFetchSF2(url, label);
+      return; // sucesso!
+    } catch(e) {
+      console.warn(`Falhou: ${url}`, e.message);
+    }
+  }
+
+  // Tudo falhou — pede arquivo via seletor (funciona offline e local)
+  setSF2Status('error', 'Sem internet? Clique em <strong>"Trocar .sf2"</strong> e selecione o arquivo FluidR3_GM.sf2 →');
+}
+
+// Usuário carrega SF2 manualmente via botão
+document.getElementById('sf2-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setSF2Status('loading', `Carregando ${file.name}…`);
+  try {
+    const buf = await file.arrayBuffer();
+    setSF2Status('loading', 'Processando soundfont…');
+    soundBank = SoundBankLoader.fromArrayBuffer(buf);
+    setSF2Status('ok', `${file.name} ✓`);
+    toast(`Soundfont "${file.name}" carregado!`);
+  } catch(err) {
+    setSF2Status('error', `Erro ao carregar: ${err.message}`);
+  }
+});
+
+// ── File input / drag & drop ───────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  addFiles(e.dataTransfer.files);
+});
+
+function addFiles(files) {
+  let added = 0;
+  for (const f of files) {
+    if (!f.name.match(/\.(mid|midi)$/i)) continue;
+    if (queue.find(q => q.name === f.name && q.file.size === f.size)) continue; // dedup
+    queue.push({ file: f, name: f.name, state: 'waiting', progress: 0, blob: null, objectUrl: null });
+    added++;
+  }
+  if (added) renderQueue();
+  fileInput.value = '';
+}
+
+// ── Queue rendering ───────────────────────────────────────────
+const STATE_ICON  = { waiting: '○', converting: '◉', done: '✓', error: '✕' };
+const STATE_COLOR = { waiting: '', converting: 'running', done: 'ok', error: 'err' };
+
+function renderQueue() {
+  const el      = document.getElementById('queue');
+  const header  = document.getElementById('queue-header');
+  const empty   = document.getElementById('empty-state');
+  const countEl = document.getElementById('queue-count');
+
+  // Remove old rows (keep header + empty)
+  el.querySelectorAll('.queue-item').forEach(r => r.remove());
+
+  if (queue.length === 0) {
+    header.style.display = 'none';
+    empty.style.display  = 'block';
+    return;
+  }
+
+  header.style.display  = 'flex';
+  empty.style.display   = 'none';
+  countEl.textContent   = `${queue.length} arquivo${queue.length !== 1 ? 's' : ''}`;
+
+  queue.forEach((item, idx) => {
+    const row = document.createElement('div');
+    row.className = `queue-item state-${item.state}`;
+    row.id = `qi-${idx}`;
+
+    const statusText = item.state === 'waiting'    ? 'Aguardando'
+                     : item.state === 'converting' ? `Convertendo… ${item.progress}%`
+                     : item.state === 'done'        ? 'MP3 pronto!'
+                     : `Erro: ${item.message || ''}`;
+
+    const downloadBtn = item.state === 'done'
+      ? `<button class="qi-btn download" title="Baixar" onclick="downloadItem(${idx})">⬇</button>` : '';
+    const removeBtn = item.state === 'waiting'
+      ? `<button class="qi-btn remove" title="Remover" onclick="removeItem(${idx})">✕</button>` : '';
+
+    const barClass = item.state === 'done' ? 'done' : item.state === 'error' ? 'error' : '';
+    const barWidth = item.state === 'converting' ? item.progress : item.state === 'done' ? 100 : 0;
+
+    row.innerHTML = `
+      <div class="qi-icon">${STATE_ICON[item.state]}</div>
+      <div class="qi-info">
+        <div class="qi-name" title="${item.name}">${item.name}</div>
+        <div class="qi-status ${STATE_COLOR[item.state]}">${statusText}</div>
+        <div class="qi-progress"><div class="qi-progress-bar ${barClass}" style="width:${barWidth}%"></div></div>
+      </div>
+      <div class="qi-actions">${downloadBtn}${removeBtn}</div>
+    `;
+    el.appendChild(row);
+  });
+}
+
+window.removeItem = (idx) => {
+  if (queue[idx].objectUrl) URL.revokeObjectURL(queue[idx].objectUrl);
+  queue.splice(idx, 1);
+  renderQueue();
+};
+
+window.downloadItem = (idx) => {
+  const item = queue[idx];
+  if (!item.blob) return;
+  const a = document.createElement('a');
+  a.href = item.objectUrl;
+  a.download = item.name.replace(/\.(mid|midi)$/i, '.mp3');
+  a.click();
+};
+
+window.clearDone = () => {
+  queue.filter(i => i.state === 'done' || i.state === 'error').forEach(i => {
+    if (i.objectUrl) URL.revokeObjectURL(i.objectUrl);
+  });
+  queue = queue.filter(i => i.state === 'waiting');
+  renderQueue();
+};
+
+// ── Conversion ────────────────────────────────────────────────
+window.startConversion = async () => {
+  if (converting) return;
+  if (!soundBank) { toast('Soundfont ainda carregando, aguarde…'); return; }
+  const pending = queue.filter(i => i.state === 'waiting');
+  if (!pending.length) { toast('Nenhum arquivo aguardando conversão'); return; }
+
+  converting = true;
+  document.getElementById('btn-convert').disabled = true;
+  document.getElementById('btn-convert').textContent = 'Convertendo…';
+
+  for (const item of pending) {
+    await convertItem(item);
+  }
+
+  converting = false;
+  document.getElementById('btn-convert').disabled = false;
+  document.getElementById('btn-convert').innerHTML = '▶&nbsp; Converter tudo';
+  const doneCount = queue.filter(i => i.state === 'done').length;
+  toast(`✓ ${doneCount} arquivo${doneCount !== 1 ? 's' : ''} convertido${doneCount !== 1 ? 's' : ''}!`);
+};
+
+async function convertItem(item) {
+  item.state    = 'converting';
+  item.progress = 0;
+  renderQueue();
+
+  try {
+    const midiBuffer = await item.file.arrayBuffer();
+    const midi = BasicMIDI.fromArrayBuffer(midiBuffer);
+
+    item.progress = 10; renderQueue();
+
+    // Calculate duration
+    const durationSecs = midi.duration + 1;
+    const totalSamples = Math.ceil(durationSecs * SAMPLE_RATE);
+
+    // Initialize synthesizer (offline = faster than real-time)
+    const synth = new SpessaSynthProcessor(SAMPLE_RATE, { enableEventSystem: false });
+    synth.soundBankManager.addSoundBank(soundBank, 'main');
+    await synth.processorInitialized;
+    synth.setMasterParameter('autoAllocateVoices', true);
+
+    item.progress = 20; renderQueue();
+
+    // Set up sequencer
+    const seq = new SpessaSynthSequencer(synth);
+    seq.loadNewSongList([midi]);
+
+    // Render in chunks
+    const CHUNK = SAMPLE_RATE * 2; // 2s chunks
+    const leftChannel  = new Float32Array(totalSamples);
+    const rightChannel = new Float32Array(totalSamples);
+
+    let offset = 0;
+    while (offset < totalSamples) {
+      const size = Math.min(CHUNK, totalSamples - offset);
+      const out  = synth.renderAudio(size);
+      leftChannel.set(out[0].subarray(0, size), offset);
+      rightChannel.set(out[1].subarray(0, size), offset);
+      offset += size;
+      item.progress = 20 + Math.round((offset / totalSamples) * 60);
+      renderQueue();
+      // yield to browser
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    item.progress = 82; renderQueue();
+
+    // Encode to MP3 using lamejs
+    const bitrate = parseInt(document.getElementById('bitrate').value);
+    const mp3Data  = encodeMP3(leftChannel, rightChannel, bitrate);
+
+    item.progress = 96; renderQueue();
+
+    // Create blob
+    item.blob      = new Blob(mp3Data, { type: 'audio/mpeg' });
+    item.objectUrl = URL.createObjectURL(item.blob);
+    item.state     = 'done';
+    item.progress  = 100;
+
+    // Auto-download
+    downloadItem(queue.indexOf(item));
+
+  } catch (err) {
+    item.state   = 'error';
+    item.message = err.message.slice(0, 80);
+    console.error('Conversion error:', err);
+  }
+
+  renderQueue();
+}
+
+function encodeMP3(left, right, kbps) {
+  const mp3enc = new lamejs.Mp3Encoder(2, SAMPLE_RATE, kbps);
+  const BLOCK  = 1152;
+  const chunks = [];
+
+  // Convert Float32 → Int16
+  const toInt16 = (f32) => {
+    const i16 = new Int16Array(f32.length);
+    for (let i = 0; i < f32.length; i++) {
+      const s = Math.max(-1, Math.min(1, f32[i]));
+      i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    return i16;
+  };
+
+  const L = toInt16(left);
+  const R = toInt16(right);
+
+  for (let i = 0; i < L.length; i += BLOCK) {
+    const lChunk = L.subarray(i, i + BLOCK);
+    const rChunk = R.subarray(i, i + BLOCK);
+    const encoded = mp3enc.encodeBuffer(lChunk, rChunk);
+    if (encoded.length > 0) chunks.push(new Int8Array(encoded));
+  }
+
+  const flushed = mp3enc.flush();
+  if (flushed.length > 0) chunks.push(new Int8Array(flushed));
+  return chunks;
+}
+
+// ── Toast ──────────────────────────────────────────────────────
+function toast(msg, duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+window.toast = toast;
+
+// ── Init ───────────────────────────────────────────────────────
+renderQueue();
+initSF2();
+</script>
+</body>
+</html>
