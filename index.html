@@ -528,10 +528,8 @@ async function tryFetchSF2(url, label) {
 async function initSF2() {
   // CDNs com CORS aberto, testados e confiáveis
   const cdns = [
-    // jsDelivr espelha qualquer repo do GitHub com CORS — muito confiável
-    ['https://cdn.jsdelivr.net/gh/urish/cinto@master/media/FluidR3%20GM.sf2', 'FluidR3 GM'],
-    // Fallback: GeneralUser GS — menor (30MB), ótima qualidade
-    ['https://cdn.jsdelivr.net/gh/mrbumpy409/GeneralUser-GS@3.2.1/soundfonts/GeneralUser%20GS%20v2.0.1.sf2', 'GeneralUser GS'],
+    // SF2 hospedado no próprio repositório via Git LFS
+    ['https://media.githubusercontent.com/media/souzanato/mid2mp3/main/FluidR3_GM.sf2', 'FluidR3 GM'],
   ];
 
   for (const [url, label] of cdns) {
